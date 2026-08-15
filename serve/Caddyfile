@@ -1,0 +1,7 @@
+:8080 {
+    root * /srv
+    @serve_files path /serve.sh /Caddyfile
+    respond @serve_files 404
+    file_server
+    encode gzip
+}

@@ -76,7 +76,7 @@ DOCKER_ARGS=(
     --name "$CONTAINER_NAME"
     --restart unless-stopped
     -v "$(pwd)/Caddyfile:/etc/caddy/Caddyfile:ro"
-    -v "$(pwd):/srv:ro"
+    -v "$(pwd)/../web:/srv:ro"
     -v "oathsworn-caddy-config:/config"
 )
 
