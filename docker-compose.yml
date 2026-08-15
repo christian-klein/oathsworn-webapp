@@ -1,0 +1,19 @@
+name: oathsworn
+
+services:
+  oathsworn-webapp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        INCLUDE_GERMAN_LANG: "${INCLUDE_GERMAN_LANG:-false}"
+    image: oathsworn-webapp
+    container_name: oathsworn-webapp
+    ports:
+      - "8080:8080"
+    volumes:
+      - oathsworn-backups:/backups
+    restart: unless-stopped
+
+volumes:
+  oathsworn-backups:

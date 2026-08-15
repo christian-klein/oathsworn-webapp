@@ -1,10 +1,7 @@
 .git/
 
-# Decompiled APK output (large, not needed in images)
+# Decompiled APK output (large, generated inside builder container)
 app/
-
-# Generated data files (provided via Docker volume at runtime)
-web/data/
 
 # Python cache
 __pycache__/
@@ -12,4 +9,3 @@ __pycache__/
 
 # Temporary APK file
 _oathsworn_setup.apk
-*.apk
