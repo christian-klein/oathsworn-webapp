@@ -14,6 +14,8 @@ import re
 import json
 import os
 import shutil
+import subprocess
+import concurrent.futures
 from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -101,7 +103,7 @@ def build_image_map():
     for fname in os.listdir(IMAGE_DIR):
         base, ext = os.path.splitext(fname)
         if (base.startswith('ch') or base.startswith('path_')) and ext in ('.jpg', '.png'):
-            ext_map[base] = ext[1:]  # 'jpg' or 'png'
+            ext_map[base] = 'webp'
     return ext_map
 
 
@@ -140,22 +142,87 @@ def _sync_dir(src_dir, dest_dir, keep):
 
 
 def copy_images():
-    """Sync game images (ch*, path_*) from drawable-land-xxxhdpi to web/data/images/."""
+    """Convert and sync game images (ch*, path_*) from drawable-land-xxxhdpi to web/data/images/ as .webp."""
     if not os.path.isdir(IMAGE_DIR):
         print(f"  WARNING: image dir not found: {IMAGE_DIR}")
         return 0, 0
-    def keep(fname):
+    os.makedirs(OUT_IMAGE_DIR, exist_ok=True)
+    expected = set()
+    for fname in os.listdir(IMAGE_DIR):
         base, ext = os.path.splitext(fname)
-        return (base.startswith('ch') or base.startswith('path_')) and ext in ('.jpg', '.png')
-    return _sync_dir(IMAGE_DIR, OUT_IMAGE_DIR, keep)
+        if (base.startswith('ch') or base.startswith('path_')) and ext in ('.jpg', '.png'):
+            expected.add(base + '.webp')
+
+    removed = 0
+    for fname in os.listdir(OUT_IMAGE_DIR):
+        if fname not in expected:
+            os.remove(os.path.join(OUT_IMAGE_DIR, fname))
+            removed += 1
+
+    converted = 0
+    for fname in os.listdir(IMAGE_DIR):
+        base, ext = os.path.splitext(fname)
+        if (base.startswith('ch') or base.startswith('path_')) and ext in ('.jpg', '.png'):
+            src = os.path.join(IMAGE_DIR, fname)
+            dest = os.path.join(OUT_IMAGE_DIR, base + '.webp')
+            if os.path.exists(dest) and os.path.getmtime(dest) >= os.path.getmtime(src):
+                continue
+            with Image.open(src) as img:
+                if img.mode not in ('RGB', 'RGBA'):
+                    img = img.convert('RGBA')
+                img.save(dest, 'WEBP', quality=80)
+            converted += 1
+
+    return converted, removed
+
+
+def _convert_audio_file(args):
+    src, dest = args
+    res = subprocess.run(
+        ['ffmpeg', '-y', '-i', src, '-c:a', 'libopus', '-b:a', '64k', dest],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    return res.returncode == 0
 
 
 def copy_audio():
-    """Sync mp3 files from res/raw to web/data/audio/."""
+    """Convert mp3 files from res/raw to Opus .webm files in web/data/audio/."""
     if not os.path.isdir(AUDIO_DIR):
         print(f"  WARNING: audio dir not found: {AUDIO_DIR}")
         return 0, 0
-    return _sync_dir(AUDIO_DIR, OUT_AUDIO_DIR, lambda f: f.endswith('.mp3'))
+    os.makedirs(OUT_AUDIO_DIR, exist_ok=True)
+
+    has_ffmpeg = shutil.which('ffmpeg') is not None
+    if not has_ffmpeg:
+        print("  WARNING: ffmpeg not found - falling back to raw mp3 copy")
+        return _sync_dir(AUDIO_DIR, OUT_AUDIO_DIR, lambda f: f.endswith('.mp3'))
+
+    expected = {os.path.splitext(f)[0] + '.webm' for f in os.listdir(AUDIO_DIR) if f.endswith('.mp3')}
+
+    removed = 0
+    for fname in os.listdir(OUT_AUDIO_DIR):
+        if fname not in expected and not fname.endswith('.mp3'):
+            os.remove(os.path.join(OUT_AUDIO_DIR, fname))
+            removed += 1
+
+    tasks = []
+    for fname in os.listdir(AUDIO_DIR):
+        if fname.endswith('.mp3'):
+            base = os.path.splitext(fname)[0]
+            src = os.path.join(AUDIO_DIR, fname)
+            dest = os.path.join(OUT_AUDIO_DIR, base + '.webm')
+            if os.path.exists(dest) and os.path.getmtime(dest) >= os.path.getmtime(src):
+                continue
+            tasks.append((src, dest))
+
+    if tasks:
+        workers = min(os.cpu_count() or 4, 8)
+        print(f"  Converting {len(tasks)} audio files to Opus .webm ({workers} workers)...")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+            list(executor.map(_convert_audio_file, tasks))
+
+    return len(tasks), removed
 
 
 def _copy_named_assets(src_dir, dest_dir, names):

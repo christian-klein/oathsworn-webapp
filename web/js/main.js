@@ -164,7 +164,7 @@ function imageUrl(name) {
 
 function audioUrl(name) {
     if (!name) return null;
-    return AUDIO_BASE + name + '.mp3';
+    return AUDIO_BASE + name + '.webm';
 }
 
 //
@@ -947,7 +947,184 @@ function loadSaveDataScreen() {
     }
 
     document.getElementById('save-data-raw').textContent = raw ? JSON.stringify(JSON.parse(raw), null, 2) : '{}';
+    fetchServerBackups();
     showScreen('screen-save-data');
+}
+
+//
+// Backup & Restore
+//
+
+function exportLocalBackup() {
+    const saveRaw = localStorage.getItem(STORAGE_KEY) || '{}';
+    const settingsRaw = localStorage.getItem(SETTINGS_KEY) || '{}';
+    
+    const backup = {
+        version: 1,
+        timestamp: new Date().toISOString(),
+        save: JSON.parse(saveRaw),
+        settings: JSON.parse(settingsRaw)
+    };
+
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const dateStr = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `oathsworn_backup_${dateStr}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+function importLocalBackup(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const data = JSON.parse(e.target.result);
+            if (!data.save && !data.chapters) {
+                alert('Invalid backup file format.');
+                return;
+            }
+            const saveObj = data.save || data;
+            const settingsObj = data.settings;
+
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(saveObj));
+            if (settingsObj) {
+                localStorage.setItem(SETTINGS_KEY, JSON.stringify(settingsObj));
+            }
+            alert('Backup imported successfully!');
+            loadSaveDataScreen();
+        } catch (err) {
+            alert('Error parsing backup JSON file: ' + err.message);
+        }
+    };
+    reader.readAsText(file);
+}
+
+function fetchServerBackups() {
+    const listEl = document.getElementById('server-backups-list');
+    if (!listEl) return;
+
+    fetch('/api/backups')
+        .then(res => res.ok ? res.json() : Promise.reject('Failed to load'))
+        .then(data => {
+            const backups = data.backups || [];
+            if (backups.length === 0) {
+                listEl.innerHTML = '<p style="color: var(--color-text-dim);">No server volume snapshots found.</p>';
+                return;
+            }
+
+            let html = '<table class="save-data-table mt-2">';
+            html += '<thead><tr><th>File</th><th>Date</th><th>Size</th><th>Action</th></tr></thead><tbody>';
+            backups.forEach(b => {
+                const dateStr = b.mtime ? new Date(b.mtime).toLocaleString() : 'Unknown';
+                const kb = (b.size / 1024).toFixed(1) + ' KB';
+                html += `<tr>
+                    <td class="save-data-key">${b.filename}</td>
+                    <td class="save-data-val">${dateStr}</td>
+                    <td class="save-data-val">${kb}</td>
+                    <td>
+                        <button class="btn btn-ghost-game btn-sm btn-restore-server" data-filename="${b.filename}">Restore</button>
+                        <button class="btn btn-ghost-game btn-sm text-danger btn-delete-server" data-filename="${b.filename}">Delete</button>
+                    </td>
+                </tr>`;
+            });
+            html += '</tbody></table>';
+            listEl.innerHTML = html;
+
+            $('.btn-restore-server').off('click').on('click', function() {
+                restoreServerBackup($(this).attr('data-filename'));
+            });
+            $('.btn-delete-server').off('click').on('click', function() {
+                deleteServerBackup($(this).attr('data-filename'));
+            });
+        })
+        .catch(err => {
+            listEl.innerHTML = '<p style="color: var(--color-text-dim);">Server volume backup service unavailable.</p>';
+        });
+}
+
+function saveServerBackup() {
+    const saveRaw = localStorage.getItem(STORAGE_KEY) || '{}';
+    const settingsRaw = localStorage.getItem(SETTINGS_KEY) || '{}';
+
+    const name = prompt('Enter a name for this server snapshot (optional):', '');
+    if (name === null) return;
+
+    const payload = {
+        name: name,
+        save: JSON.parse(saveRaw),
+        settings: JSON.parse(settingsRaw)
+    };
+
+    fetch('/api/backups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            alert('Server snapshot saved: ' + data.filename);
+            fetchServerBackups();
+        } else {
+            alert('Error saving server snapshot: ' + (data.error || 'Unknown error'));
+        }
+    })
+    .catch(err => {
+        alert('Failed to connect to server backup service.');
+    });
+}
+
+function restoreServerBackup(filename) {
+    if (!confirm(`Restore server snapshot "${filename}"? This will overwrite your current browser progress.`)) return;
+
+    fetch('/api/backups/restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: filename })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success && data.data) {
+            const saveObj = data.data.save || data.data;
+            const settingsObj = data.data.settings;
+
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(saveObj));
+            if (settingsObj) {
+                localStorage.setItem(SETTINGS_KEY, JSON.stringify(settingsObj));
+            }
+            alert('Snapshot restored successfully!');
+            loadSaveDataScreen();
+        } else {
+            alert('Error restoring backup: ' + (data.error || 'Unknown error'));
+        }
+    })
+    .catch(err => {
+        alert('Failed to restore server backup.');
+    });
+}
+
+function deleteServerBackup(filename) {
+    if (!confirm(`Delete server snapshot "${filename}"?`)) return;
+
+    fetch(`/api/backups/${encodeURIComponent(filename)}`, {
+        method: 'DELETE'
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            fetchServerBackups();
+        } else {
+            alert('Error deleting file: ' + (data.error || 'Unknown error'));
+        }
+    })
+    .catch(err => {
+        alert('Failed to delete server backup.');
+    });
 }
 
 //
@@ -1238,4 +1415,14 @@ $(function() {
         engine.setClueToken(idx, !tokens[idx]);
         renderHudControls();
     });
+
+    // Backup & Restore event handlers
+    $('#btn-export-backup').on('click', exportLocalBackup);
+    $('#file-import-backup').on('change', function() {
+        if (this.files && this.files[0]) {
+            importLocalBackup(this.files[0]);
+            this.value = '';
+        }
+    });
+    $('#btn-server-save').on('click', saveServerBackup);
 });

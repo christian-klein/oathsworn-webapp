@@ -1,13 +1,20 @@
-.PHONY: setup release help
+.PHONY: build up setup release help
 
 help:
 	@echo "Targets:"
-	@echo "  setup                   Download APK, decompile, generate web data"
-	@echo "  setup APK_CACHE=<path>  Same but cache the APK at a custom path"
+	@echo "  build                   Build oathsworn-webapp container image"
+	@echo "  build INCLUDE_GERMAN_LANG=true  Build with German language support"
+	@echo "  up                      Start container with docker compose"
+	@echo "  setup                   Alias for build"
 	@echo "  release VERSION=vX.Y.Z  Tag and push a release"
 
-setup:
-	APK_CACHE=$(APK_CACHE) ./setup.sh
+build:
+	INCLUDE_GERMAN_LANG=$(INCLUDE_GERMAN_LANG) ./setup.sh
+
+up:
+	docker compose up -d
+
+setup: build
 
 release:
 ifndef VERSION

@@ -51,16 +51,33 @@
      ============================================================ -->
 <div id="screen-save-data" class="screen">
     <div class="container py-3">
-        <div class="d-flex align-items-center mb-4 gap-3">
+        <div class="d-flex align-items-center mb-3 gap-2 flex-wrap">
             <button id="btn-save-back" class="btn btn-ghost-game" data-string-key="ui.back">Back</button>
-            <h4 class="mb-0 screen-heading" data-string-key="ui.saved_data">Saved Data</h4>
-            <button id="btn-copy-save" class="btn btn-ghost-game ms-auto" data-string-key="ui.copy_json">Copy JSON</button>
+            <h4 class="mb-0 screen-heading me-auto" data-string-key="ui.saved_data">Saved Data & Backups</h4>
+            
+            <button id="btn-export-backup" class="btn btn-ghost-game btn-sm">Export File (.json)</button>
+            <label class="btn btn-ghost-game btn-sm mb-0">
+                Import File <input type="file" id="file-import-backup" accept=".json" style="display: none;">
+            </label>
+            <button id="btn-server-save" class="btn btn-primary-game btn-sm">Save Server Snapshot</button>
         </div>
+
         <div id="save-data-content">
             <!-- populated by loadSaveDataScreen() -->
         </div>
+
+        <div id="server-backups-section" class="mt-4">
+            <h5>Server Volume Snapshots</h5>
+            <div id="server-backups-list">
+                <!-- populated by fetchServerBackups() -->
+            </div>
+        </div>
+
         <details class="mt-4">
             <summary class="save-data-summary" data-string-key="ui.raw_json">Raw JSON</summary>
+            <div class="d-flex justify-content-end mb-2">
+                <button id="btn-copy-save" class="btn btn-ghost-game btn-sm" data-string-key="ui.copy_json">Copy JSON</button>
+            </div>
             <pre id="save-data-raw" class="save-data-raw"></pre>
         </details>
     </div>
